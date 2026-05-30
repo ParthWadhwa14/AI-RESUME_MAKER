@@ -77,6 +77,29 @@ export default function GeneratePage() {
     let cancelled = false;
     let timer = null;
 
+    // Inline helper to avoid referencing handleAutoSave before it's initialized
+    const autoSaveIfLoggedIn = async (generatedFiles, currentJobId) => {
+      if (!user) return;
+      try {
+        setSaveStatus('saving');
+        const saved = await savePortfolio({
+          title: formData?.personal?.name
+            ? `${formData.personal.name}'s Portfolio`
+            : 'Untitled Portfolio',
+          prompt,
+          resumeData: formData,
+          files: generatedFiles,
+          jobId: currentJobId,
+        });
+        setPortfolioId(saved.id);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      } catch (err) {
+        console.error('Auto-save failed:', err);
+        setSaveStatus('error');
+      }
+    };
+
     const poll = async () => {
       try {
         const res = await fetch(`${apiUrl}/api/generate/status/${jobId}`);
@@ -88,31 +111,7 @@ export default function GeneratePage() {
           if (data.files && Object.keys(data.files).length > 0) {
             setFiles(data.files);
             setStep('preview');
-
-            // Avoid referencing handleAutoSave here (it is declared later in the file).
-            // Auto-save inline if the user is logged in.
-            if (user) {
-              (async () => {
-                try {
-                  setSaveStatus('saving');
-                  const saved = await savePortfolio({
-                    title: formData?.personal?.name
-                      ? `${formData.personal.name}'s Portfolio`
-                      : 'Untitled Portfolio',
-                    prompt,
-                    resumeData: formData,
-                    files: data.files,
-                    jobId,
-                  });
-                  setPortfolioId(saved.id);
-                  setSaveStatus('saved');
-                  setTimeout(() => setSaveStatus('idle'), 3000);
-                } catch (err) {
-                  console.error('Auto-save failed:', err);
-                  setSaveStatus('error');
-                }
-              })();
-            }
+            autoSaveIfLoggedIn(data.files, jobId);
           } else {
             console.error('Job completed but no files returned');
             setStep('input');
