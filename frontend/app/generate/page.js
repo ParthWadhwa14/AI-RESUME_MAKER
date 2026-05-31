@@ -10,8 +10,7 @@ import GenerationStatus from '@/components/GenerationStatus';
 import SandpackPreview from '@/components/SandpackPreview';
 import ChatEditor from '@/components/ChatEditor';
 import { Wand2, ArrowLeft, Loader2, Save, Check } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
-import { savePortfolio, getPortfolio, updatePortfolio } from '@/lib/portfolioApi';
+import { savePortfolio, getPortfolio } from '@/lib/portfolioApi';
 
 const SAMPLE_FILES = {
   '/App.js': `import React from 'react';
@@ -41,6 +40,7 @@ export default function App() {
 };
 
 const STORAGE_KEY = 'resume-gala:generate-state:v1';
+const CLEAR_DRAFT_KEY = 'resume-gala:generate-clear-draft:v1';
 
 function safeParse(json, fallback) {
   try {
@@ -51,7 +51,6 @@ function safeParse(json, fallback) {
 }
 
 export default function GeneratePage() {
-  const { user, loading } = useAuth();
   const searchParams = useSearchParams();
   const [step, setStep] = useState('input');
   const [formData, setFormData] = useState({
@@ -66,9 +65,12 @@ export default function GeneratePage() {
   const [files, setFiles] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [portfolioId, setPortfolioId] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // Align with lib/portfolioApi defaults (127.0.0.1 is more reliable than localhost)
+  const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = RAW_API_URL === '' ? '' : (RAW_API_URL || 'http://127.0.0.1:8000');
 
   // Poll generation status when we have a jobId and are in generating state
   useEffect(() => {
@@ -87,32 +89,32 @@ export default function GeneratePage() {
         if (data.status === 'completed') {
           if (data.files && Object.keys(data.files).length > 0) {
             setFiles(data.files);
+            if (data.preview_url) {
+              setPreviewUrl(data.preview_url);
+            }
             setStep('preview');
 
-            // Avoid referencing handleAutoSave here (it is declared later in the file).
-            // Auto-save inline if the user is logged in.
-            if (user) {
-              (async () => {
-                try {
-                  setSaveStatus('saving');
-                  const saved = await savePortfolio({
-                    title: formData?.personal?.name
-                      ? `${formData.personal.name}'s Portfolio`
-                      : 'Untitled Portfolio',
-                    prompt,
-                    resumeData: formData,
-                    files: data.files,
-                    jobId,
-                  });
-                  setPortfolioId(saved.id);
-                  setSaveStatus('saved');
-                  setTimeout(() => setSaveStatus('idle'), 3000);
-                } catch (err) {
-                  console.error('Auto-save failed:', err);
-                  setSaveStatus('error');
-                }
-              })();
-            }
+            // Auto-save immediately in local-only mode.
+            (async () => {
+              try {
+                setSaveStatus('saving');
+                const saved = await savePortfolio({
+                  title: formData?.personal?.name
+                    ? `${formData.personal.name}'s Portfolio`
+                    : 'Untitled Portfolio',
+                  prompt,
+                  resumeData: formData,
+                  files: data.files,
+                  jobId,
+                });
+                setPortfolioId(saved.id);
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus('idle'), 3000);
+              } catch (err) {
+                console.error('Auto-save failed:', err);
+                setSaveStatus('error');
+              }
+            })();
           } else {
             console.error('Job completed but no files returned');
             setStep('input');
@@ -131,6 +133,7 @@ export default function GeneratePage() {
         // still running/pending
         timer = setTimeout(poll, 1500);
       } catch (err) {
+        // Most common cause is backend not running / wrong API URL.
         console.error('Status poll error:', err);
         timer = setTimeout(poll, 2000);
       }
@@ -142,7 +145,7 @@ export default function GeneratePage() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [jobId, step, apiUrl, user, formData, prompt]);
+  }, [jobId, step, apiUrl, formData, prompt]);
 
   // Restore state after refresh/restart
   useEffect(() => {
@@ -180,10 +183,10 @@ export default function GeneratePage() {
     }
   }, [step, formData, prompt, jobId, files]);
 
-  // Load portfolio from URL param if present
+  // Load portfolio from URL param if present (local-only)
   useEffect(() => {
     const id = searchParams.get('id');
-    if (!id || !user) return;
+    if (!id) return;
 
     let cancelled = false;
     (async () => {
@@ -200,12 +203,38 @@ export default function GeneratePage() {
         console.error('Failed to load portfolio:', err);
       }
     })();
-    return () => { cancelled = true; };
-  }, [searchParams, user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
 
-  // Auto-save when generation completes (user is logged in)
-  const handleAutoSave = useCallback(async (generatedFiles, currentJobId) => {
-    if (!user) return;
+  // Auto-save when generation completes (local-only: always save)
+  const handleAutoSave = useCallback(
+    async (generatedFiles, currentJobId) => {
+      try {
+        setSaveStatus('saving');
+        const saved = await savePortfolio({
+          title: formData?.personal?.name
+            ? `${formData.personal.name}'s Portfolio`
+            : 'Untitled Portfolio',
+          prompt,
+          resumeData: formData,
+          files: generatedFiles,
+          jobId: currentJobId,
+        });
+        setPortfolioId(saved.id);
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      } catch (err) {
+        console.error('Auto-save failed:', err);
+        setSaveStatus('error');
+      }
+    },
+    [formData, prompt]
+  );
+
+  const handleManualSave = async () => {
+    if (!files || saveStatus === 'saving') return;
     try {
       setSaveStatus('saving');
       const saved = await savePortfolio({
@@ -214,36 +243,10 @@ export default function GeneratePage() {
           : 'Untitled Portfolio',
         prompt,
         resumeData: formData,
-        files: generatedFiles,
-        jobId: currentJobId,
+        files,
+        jobId,
       });
       setPortfolioId(saved.id);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 3000);
-    } catch (err) {
-      console.error('Auto-save failed:', err);
-      setSaveStatus('error');
-    }
-  }, [user, formData, prompt]);
-
-  const handleManualSave = async () => {
-    if (!user || !files || saveStatus === 'saving') return;
-    try {
-      setSaveStatus('saving');
-      if (portfolioId) {
-        await updatePortfolio(portfolioId, { files });
-      } else {
-        const saved = await savePortfolio({
-          title: formData?.personal?.name
-            ? `${formData.personal.name}'s Portfolio`
-            : 'Untitled Portfolio',
-          prompt,
-          resumeData: formData,
-          files,
-          jobId,
-        });
-        setPortfolioId(saved.id);
-      }
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (err) {
@@ -320,11 +323,30 @@ export default function GeneratePage() {
   }, []);
 
   const handleReset = () => {
+    // Reset UI, but keep draft persisted so Back/Refresh doesn't wipe work.
     setStep('input');
     setFiles(null);
     setJobId(null);
+    setPreviewUrl(null);
+  };
+
+  const handleClearDraft = () => {
+    setStep('input');
+    setFiles(null);
+    setJobId(null);
+    setPrompt('');
+    setFormData({
+      personal: { name: '', title: '', social: { github: '', linkedin: '' } },
+      education: [],
+      experience: [],
+      skills: [],
+      projects: [],
+    });
+    setPortfolioId(null);
+    setPreviewUrl(null);
     try {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.setItem(CLEAR_DRAFT_KEY, String(Date.now()));
     } catch {
       // ignore
     }
@@ -358,20 +380,6 @@ export default function GeneratePage() {
               <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>
                 Fill in your resume details and describe your ideal style
               </p>
-              {!loading && !user ? (
-                <p
-                  style={{
-                    color: 'var(--text-tertiary)',
-                    fontSize: '0.9rem',
-                    marginTop: 'var(--space-sm)',
-                  }}
-                >
-                  Want to save your work?{' '}
-                  <Link href="/login" style={{ color: 'var(--accent-cyan)' }}>
-                    Sign in
-                  </Link>
-                </p>
-              ) : null}
             </div>
 
             {/* Two column layout */}
@@ -503,34 +511,49 @@ export default function GeneratePage() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                {user && (
-                  <button
-                    className="btn-secondary"
-                    onClick={handleManualSave}
-                    disabled={saveStatus === 'saving'}
-                    style={{
-                      color: saveStatus === 'saved' ? 'var(--accent-green)' : undefined,
-                    }}
-                  >
-                    {saveStatus === 'saving' ? (
-                      <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
-                    ) : saveStatus === 'saved' ? (
-                      <><Check size={16} /> Saved!</>
-                    ) : (
-                      <><Save size={16} /> Save</>
-                    )}
-                  </button>
-                )}
+                <button
+                  className="btn-secondary"
+                  onClick={handleManualSave}
+                  disabled={saveStatus === 'saving'}
+                  style={{
+                    color: saveStatus === 'saved' ? 'var(--accent-green)' : undefined,
+                  }}
+                >
+                  {saveStatus === 'saving' ? (
+                    <>
+                      <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Saving...
+                    </>
+                  ) : saveStatus === 'saved' ? (
+                    <>
+                      <Check size={16} /> Saved!
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} /> Save
+                    </>
+                  )}
+                </button>
                 <button className="btn-secondary" onClick={handleReset}>
                   <ArrowLeft size={16} />
                   Start Over
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    if (confirm('Clear the saved draft state? This cannot be undone.')) {
+                      handleClearDraft();
+                    }
+                  }}
+                  style={{ color: 'var(--accent-red, #ef4444)' }}
+                >
+                  Clear Draft
                 </button>
               </div>
             </div>
 
             {/* Preview */}
             <div style={{ marginBottom: 'var(--space-xl)' }}>
-              <SandpackPreview files={files} jobId={jobId} />
+              <SandpackPreview files={files} jobId={jobId} previewUrl={previewUrl} />
             </div>
 
             {/* Chat Editor */}

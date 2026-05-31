@@ -1,0 +1,1 @@
+import React from 'react';function About() {return (<section className="section about" id="about"><h2 className="text-3xl font-bold">About Me</h2><p className="text-xl">As a highly motivated and detail-oriented AI Full-Stack Developer, I leverage my skills in AI, machine learning, and web development to deliver innovative solutions.</p></section>);}

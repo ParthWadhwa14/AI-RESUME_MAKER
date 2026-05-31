@@ -30,14 +30,17 @@ export default function GenerationStatus({ jobId, onComplete }) {
   const [agentName, setAgentName] = useState('Initializing...');
   const [error, setError] = useState(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
   useEffect(() => {
     if (!jobId) return;
 
     let interval;
+    let stopped = false;
 
     const stopWithError = (message) => {
+      if (stopped) return;
+      stopped = true;
       setStatus('error');
       setError(message);
       if (interval) clearInterval(interval);
@@ -79,12 +82,20 @@ export default function GenerationStatus({ jobId, onComplete }) {
           clearInterval(interval);
         }
       } catch (err) {
+        // Most common case: backend not running / CORS / network error.
+        const msg = String(err?.message || err);
         console.error('Status poll error:', err);
+        if (msg.toLowerCase().includes('failed to fetch')) {
+          stopWithError('Backend API is not reachable at ' + apiUrl + '. Start the backend server and try again.');
+          return;
+        }
         stopWithError('Status check failed. Please retry generation.');
       }
     }, 2000);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [jobId, apiUrl, onComplete]);
 
   const progress = status === 'completed'

@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import { listPortfolios, deletePortfolio } from '@/lib/portfolioApi';
 import {
   Plus,
@@ -21,29 +19,31 @@ const fadeInUp = {
 };
 
 export default function DashboardPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
   const [websites, setWebsites] = useState([]);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [user, loading, router]);
-
-  useEffect(() => {
-    if (!user) return;
     let cancelled = false;
     (async () => {
       try {
+        setLoadError('');
         const data = await listPortfolios();
         if (!cancelled) setWebsites(data);
       } catch (err) {
         console.error('Failed to fetch portfolios:', err);
+        if (!cancelled) {
+          setWebsites([]);
+          setLoadError(
+            err?.message ||
+              'Could not load local portfolios. Make sure the backend is running on http://127.0.0.1:8000.'
+          );
+        }
       }
     })();
-    return () => { cancelled = true; };
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this portfolio?')) return;
@@ -55,21 +55,6 @@ export default function DashboardPage() {
       alert('Failed to delete portfolio. Please try again.');
     }
   };
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 'calc(100vh - 80px)',
-        }}
-      >
-        <div className="spinner spinner-lg" />
-      </div>
-    );
-  }
 
   const displaySites = websites;
 
@@ -99,10 +84,13 @@ export default function DashboardPage() {
             Dashboard
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            {user?.user_metadata?.full_name
-              ? `Welcome back, ${user.user_metadata.full_name}`
-              : 'Manage your generated portfolios'}
+            Your locally saved portfolios
           </p>
+          {loadError ? (
+            <p style={{ color: 'var(--accent-red, #ef4444)', fontSize: '0.85rem', marginTop: 8 }}>
+              {loadError}
+            </p>
+          ) : null}
         </div>
         <Link href="/generate">
           <button className="btn-primary">

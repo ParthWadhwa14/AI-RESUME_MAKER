@@ -28,7 +28,7 @@ const features = [
     icon: Eye,
     title: 'Live Preview',
     description:
-      'See your generated website come alive instantly with Sandpack — edit code, tweak styles, and watch changes in real-time.',
+      'See your generated website running on a real dev server — full Tailwind, animations, and all dependencies working perfectly. Open it in a new tab or preview inline.',
   },
   {
     icon: Rocket,

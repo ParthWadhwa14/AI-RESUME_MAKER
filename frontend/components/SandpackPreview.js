@@ -1,115 +1,186 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import {
-  SandpackProvider,
-  SandpackPreview as SandpackPreviewComponent,
-  SandpackCodeEditor,
-} from '@codesandbox/sandpack-react';
-import { Monitor, Code2, Download, Rocket } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Monitor, Code2, Download, Rocket, ExternalLink, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 
-// Sandpack runs in-browser and cannot install arbitrary npm packages.
-// Keep a small allowlist of deps that are known to work in Sandpack.
-const SANDBOX_SAFE_DEPS = {
-  react: '^18.2.0',
-  'react-dom': '^18.2.0',
-};
+/**
+ * LivePreview — Replaces the old Sandpack-based preview.
+ *
+ * Instead of running the project in an in-browser sandbox (which can't handle
+ * Tailwind, Framer Motion, etc.), this component displays an iframe pointing
+ * at a real Vite dev server running on the backend.
+ *
+ * Props:
+ *   - files: The generated file map (used for code view + download fallback)
+ *   - jobId: The job ID for the generated portfolio
+ *   - previewUrl: The live dev-server URL (e.g., http://localhost:5201)
+ */
 
-const BLOCKED_DEPS = [
-  'next',
-  'next-auth',
-  '@supabase/supabase-js',
-  '@supabase/ssr',
-  'firebase',
-  'prisma',
-  'bcrypt',
-  'sharp',
-  'canvas',
-];
+function CodeViewer({ files }) {
+  const [selectedFile, setSelectedFile] = useState(null);
 
-function normalizeFiles(files) {
-  const out = {};
-  for (const [path, code] of Object.entries(files || {})) {
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    out[normalizedPath] = { code: typeof code === 'string' ? code : String(code) };
+  const fileList = useMemo(() => {
+    if (!files) return [];
+    return Object.keys(files)
+      .filter((p) => typeof files[p] === 'string')
+      .sort((a, b) => {
+        // Sort src/ files first, then config, then others
+        const aIsSrc = a.startsWith('src/') || a.startsWith('/src/');
+        const bIsSrc = b.startsWith('src/') || b.startsWith('/src/');
+        if (aIsSrc && !bIsSrc) return -1;
+        if (!aIsSrc && bIsSrc) return 1;
+        return a.localeCompare(b);
+      });
+  }, [files]);
+
+  useEffect(() => {
+    if (fileList.length > 0 && !selectedFile) {
+      // Default to App.jsx or first file
+      const defaultFile =
+        fileList.find((f) => f.includes('App.jsx') || f.includes('App.js')) ||
+        fileList[0];
+      setSelectedFile(defaultFile);
+    }
+  }, [fileList, selectedFile]);
+
+  if (!files || fileList.length === 0) {
+    return (
+      <div style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+        No files to display
+      </div>
+    );
   }
-  return out;
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', height: 500, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+      {/* File tree */}
+      <div
+        style={{
+          background: 'var(--bg-secondary)',
+          borderRight: '1px solid var(--border-primary)',
+          overflowY: 'auto',
+          padding: 'var(--space-sm) 0',
+        }}
+      >
+        {fileList.map((path) => (
+          <button
+            key={path}
+            onClick={() => setSelectedFile(path)}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              padding: '6px 12px',
+              fontSize: '0.78rem',
+              fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              color: selectedFile === path ? 'var(--accent-purple-light)' : 'var(--text-secondary)',
+              background: selectedFile === path ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {path.startsWith('/') ? path.slice(1) : path}
+          </button>
+        ))}
+      </div>
+
+      {/* Code content */}
+      <div
+        style={{
+          background: 'var(--bg-primary)',
+          overflowY: 'auto',
+          padding: 'var(--space-md)',
+        }}
+      >
+        <pre
+          style={{
+            margin: 0,
+            fontSize: '0.82rem',
+            lineHeight: 1.6,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            color: 'var(--text-primary)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          <code>{selectedFile ? files[selectedFile] : ''}</code>
+        </pre>
+      </div>
+    </div>
+  );
 }
 
-function detectEntry(files) {
-  // Sandpack react template uses /App.js by default.
-  // Prefer /src/App.* if present.
-  const candidates = ['/src/App.jsx', '/src/App.js', '/App.jsx', '/App.js'];
-  for (const c of candidates) if (files[c]) return c;
-  return '/App.js';
-}
-
-function sanitizeDependencies(rawDeps) {
-  const deps = { ...SANDBOX_SAFE_DEPS };
-  for (const [name, version] of Object.entries(rawDeps || {})) {
-    if (BLOCKED_DEPS.includes(name)) continue;
-    // Only allow deps with a simple string version to reduce Sandpack failures
-    if (typeof version === 'string' && version.length > 0) deps[name] = version;
-  }
-  return deps;
-}
-
-export default function SandpackPreview({ files, jobId }) {
+export default function SandpackPreview({ files, jobId, previewUrl: initialPreviewUrl }) {
   const [tab, setTab] = useState('preview');
+  const [previewUrl, setPreviewUrl] = useState(initialPreviewUrl || null);
+  const [previewLoading, setPreviewLoading] = useState(!initialPreviewUrl);
+  const [previewError, setPreviewError] = useState(null);
+  const [iframeKey, setIframeKey] = useState(0);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  const { sandpackFiles, customDeps, packageWarning, entryFile } = useMemo(() => {
-    if (!files || Object.keys(files).length === 0) {
-      return { sandpackFiles: {}, customDeps: {}, packageWarning: '', entryFile: '/App.js' };
-    }
+  // If we don't have a preview URL yet, poll the backend for one
+  useEffect(() => {
+    if (previewUrl || !jobId) return;
 
-    const transformed = normalizeFiles(files);
+    let cancelled = false;
+    let timer = null;
+    let attempts = 0;
+    const maxAttempts = 60; // 60 * 2s = 2 min max
 
-    let rawDeps = {};
-    let warning = '';
+    const poll = async () => {
+      if (cancelled) return;
+      attempts++;
 
-    const rawPkg = files?.['package.json'] || files?.['/package.json'];
-    if (rawPkg) {
       try {
-        const pkg = JSON.parse(rawPkg);
-        rawDeps = pkg.dependencies || {};
+        const res = await fetch(`${apiUrl}/api/preview/${jobId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data.preview_url) {
+            setPreviewUrl(data.preview_url);
+            setPreviewLoading(false);
+            return;
+          }
+        }
       } catch {
-        warning =
-          'Generated package.json was invalid JSON. Preview is running with a minimal dependency set.';
+        // Backend might not be running or preview not ready yet
       }
-    }
 
-    const safeDeps = sanitizeDependencies(rawDeps);
+      if (attempts >= maxAttempts) {
+        if (!cancelled) {
+          setPreviewLoading(false);
+          setPreviewError('Preview server could not be started. You can still download the code and run it locally.');
+        }
+        return;
+      }
 
-    // Ensure there is at least an App entry so preview always boots.
-    const entry = detectEntry(transformed);
-    if (!transformed[entry]) {
-      transformed['/App.js'] = {
-        code: `export default function App() {\n  return (\n    <div style={{fontFamily: 'system-ui', padding: 16}}>\n      <h2>Preview not available</h2>\n      <p>The generated project did not include an <code>App</code> entry file Sandpack can run.</p>\n    </div>\n  );\n}\n`,
-      };
-    }
-
-    // Some generators output index.html; Sandpack react template ignores it.
-    // Keep it as info for the user, but rely on App entry.
-
-    // Show a warning if we had to drop deps that won't run in Sandpack.
-    const blockedFound = Object.keys(rawDeps || {}).filter((d) => BLOCKED_DEPS.includes(d));
-    const blockedMsg = blockedFound.length
-      ? ` Some dependencies were removed for in-browser preview: ${blockedFound.join(', ')}.`
-      : '';
-
-    return {
-      sandpackFiles: transformed,
-      customDeps: safeDeps,
-      packageWarning: warning ? warning + blockedMsg : blockedMsg,
-      entryFile: entry,
+      timer = setTimeout(poll, 2000);
     };
-  }, [files]);
+
+    setPreviewLoading(true);
+    poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [jobId, previewUrl, apiUrl]);
+
+  // Update if parent passes a new URL
+  useEffect(() => {
+    if (initialPreviewUrl && initialPreviewUrl !== previewUrl) {
+      setPreviewUrl(initialPreviewUrl);
+      setPreviewLoading(false);
+      setPreviewError(null);
+    }
+  }, [initialPreviewUrl]);
 
   const handleDownload = async () => {
     if (!jobId) {
-      // Fallback: create zip from files in-browser
       alert('Download will be available when connected to the backend.');
       return;
     }
@@ -132,9 +203,18 @@ export default function SandpackPreview({ files, jobId }) {
   };
 
   const handleDeploy = () => {
-    // Open Vercel deploy with a template URL
     const deployUrl = `https://vercel.com/new/clone?repository-url=https://github.com/resume-gala/generated-portfolio`;
     window.open(deployUrl, '_blank');
+  };
+
+  const handleOpenInNewTab = () => {
+    if (previewUrl) {
+      window.open(previewUrl, '_blank');
+    }
+  };
+
+  const handleRefreshPreview = () => {
+    setIframeKey((k) => k + 1);
   };
 
   if (!files || Object.keys(files).length === 0) {
@@ -171,59 +251,176 @@ export default function SandpackPreview({ files, jobId }) {
           <Code2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
           Code
         </button>
+
+        {/* Right-aligned actions in tab bar */}
+        {previewUrl && tab === 'preview' && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--space-xs)' }}>
+            <button
+              onClick={handleRefreshPreview}
+              title="Refresh preview"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: '0.8rem',
+                transition: 'color 0.15s',
+              }}
+            >
+              <RefreshCw size={13} />
+            </button>
+            <button
+              onClick={handleOpenInNewTab}
+              title="Open in new tab"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: '0.8rem',
+                transition: 'color 0.15s',
+              }}
+            >
+              <ExternalLink size={13} />
+              <span>Open in new tab</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Sandpack content */}
-      {packageWarning ? (
+      {/* Preview URL indicator */}
+      {previewUrl && tab === 'preview' && (
         <div
           style={{
-            padding: '8px 10px',
-            fontSize: '0.8rem',
-            color: 'var(--accent-orange)',
-            border: '1px solid rgba(245, 158, 11, 0.4)',
-            borderRadius: '8px',
-            marginBottom: 10,
+            padding: '6px 12px',
+            fontSize: '0.78rem',
+            color: 'var(--accent-green, #22c55e)',
+            background: 'rgba(34, 197, 94, 0.06)',
+            border: '1px solid rgba(34, 197, 94, 0.2)',
+            borderRadius: 8,
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}
         >
-          {packageWarning}
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green, #22c55e)', display: 'inline-block', flexShrink: 0 }} />
+          Live server running at{' '}
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent-purple-light)', textDecoration: 'underline' }}
+          >
+            {previewUrl}
+          </a>
         </div>
-      ) : null}
-      <SandpackProvider
-        template="react"
-        files={sandpackFiles}
-        customSetup={{ dependencies: { ...customDeps } }}
-        theme="dark"
-        options={{
-          showNavigator: false,
-          showTabs: false,
-          editorHeight: '500px',
-          externalResources: ['https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap'],
-          activeFile: entryFile,
-        }}
-      >
-        <div style={{ minHeight: 500 }}>
-          {tab === 'preview' ? (
-            <SandpackPreviewComponent
-              style={{ height: 500 }}
-              showNavigator={false}
-              showRefreshButton={true}
-            />
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: 500 }}>
-              <SandpackCodeEditor
-                style={{ height: 500 }}
-                showTabs={true}
-                showLineNumbers={true}
-                wrapContent={false}
+      )}
+
+      {/* Content area */}
+      <div style={{ minHeight: 500 }}>
+        {tab === 'preview' ? (
+          previewLoading ? (
+            // Loading state
+            <div
+              style={{
+                height: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-md)',
+                background: 'var(--bg-secondary)',
+                borderRadius: 12,
+                border: '1px solid var(--border-primary)',
+              }}
+            >
+              <Loader2
+                size={36}
+                style={{
+                  animation: 'spin 1s linear infinite',
+                  color: 'var(--accent-purple-light)',
+                }}
               />
-              <SandpackPreviewComponent style={{ height: 500 }} showNavigator={false} />
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Booting preview server…
+                </p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                  Installing dependencies and starting Vite dev server
+                </p>
+              </div>
             </div>
-          )}
-        </div>
-      </SandpackProvider>
+          ) : previewError ? (
+            // Error state
+            <div
+              style={{
+                height: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-md)',
+                background: 'var(--bg-secondary)',
+                borderRadius: 12,
+                border: '1px solid var(--border-primary)',
+              }}
+            >
+              <AlertCircle size={36} style={{ color: 'var(--accent-orange, #f59e0b)' }} />
+              <div style={{ textAlign: 'center', maxWidth: 400 }}>
+                <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Preview unavailable
+                </p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>{previewError}</p>
+              </div>
+              <button
+                className="btn-secondary btn-small"
+                onClick={() => setTab('code')}
+              >
+                <Code2 size={14} />
+                View Code Instead
+              </button>
+            </div>
+          ) : previewUrl ? (
+            // Live iframe preview
+            <iframe
+              key={iframeKey}
+              src={previewUrl}
+              title="Portfolio Preview"
+              style={{
+                width: '100%',
+                height: 500,
+                border: '1px solid var(--border-primary)',
+                borderRadius: 12,
+                background: 'white',
+              }}
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            />
+          ) : null
+        ) : (
+          // Code tab
+          <CodeViewer files={files} />
+        )}
+      </div>
 
       {/* Toolbar */}
       <div className="preview-toolbar">
+        {previewUrl && (
+          <button className="btn-secondary btn-small" onClick={handleOpenInNewTab}>
+            <ExternalLink size={14} />
+            Open in New Tab
+          </button>
+        )}
         <button className="btn-secondary btn-small" onClick={handleDownload}>
           <Download size={14} />
           Download ZIP

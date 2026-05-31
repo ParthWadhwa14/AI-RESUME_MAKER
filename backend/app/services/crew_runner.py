@@ -24,6 +24,9 @@ from typing import Any
 
 from app.models.schemas import JobStatus, JobStatusEnum
 from app.services.asset_bridge import AssetBridge
+from app.services.react_project_formatter import ReactProjectFormatter
+from app.services.preflight_runner import PreflightError, PreflightRunner
+from app.services.dev_server_manager import DevServerManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +78,71 @@ def _is_retryable_llm_error(exc: Exception) -> bool:
         "internalservererror: error code: 504",
         "gateway timeout",
         "service unavailable",
+        "rate limit",
+        "429",
     ]
     return any(token in msg for token in retry_signals)
 
 
+def _should_allow_full_restart_retry() -> bool:
+    """Whether to retry the *entire* crew (expensive)."""
+    val = (os.getenv("CREW_ALLOW_RESTART_RETRIES", "0") or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
 class CrewRunner:
     """Runs the Resume Gala generation crew and tracks job progress."""
+
+    @staticmethod
+    def _persist_local_snapshot(
+        *,
+        job_id: str,
+        resume_input: dict[str, Any],
+        user_prompt: str,
+        files: dict[str, str] | None,
+        title_hint: str | None = None,
+        failure_note: str | None = None,
+    ) -> None:
+        """Best-effort persistence of generated files so output is never lost."""
+        if not files:
+            return
+        try:
+            from app.services.local_store.store import LocalPortfolioStore
+
+            store = LocalPortfolioStore()
+            title = (
+                title_hint
+                or (resume_input.get("personal", {}) or {}).get("name")
+                or resume_input.get("name")
+                or "Generated Portfolio"
+            )
+            meta = store.create(
+                title=title,
+                prompt=user_prompt,
+                resume_data=resume_input,
+                files=files,
+                job_id=job_id,
+            )
+            if failure_note:
+                # annotate meta.json with failure info (non-fatal)
+                try:
+                    import json
+                    from pathlib import Path
+
+                    backend_dir = Path(__file__).resolve().parents[2]
+                    base = backend_dir / "local_portfolios"
+                    # find folder by prefix
+                    for d in sorted(base.glob(f"{meta.id}-*")):
+                        mf = d / "meta.json"
+                        if mf.is_file():
+                            obj = json.loads(mf.read_text(encoding="utf-8"))
+                            obj["failure_note"] = failure_note
+                            mf.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+                            break
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.warning("Local snapshot persistence failed for job %s: %s", job_id, exc)
 
     @staticmethod
     async def run_generation(
@@ -117,29 +179,34 @@ class CrewRunner:
         original_model = os.getenv("MODEL")
 
         try:
-            timeout_seconds = int(os.getenv("CREW_JOB_TIMEOUT_SECONDS", "1200"))
-            max_retries = int(os.getenv("CREW_MAX_RETRIES", "2"))
+            timeout_seconds = int(os.getenv("CREW_JOB_TIMEOUT_SECONDS", "600"))
+
+            # Restart retries are expensive and feel like "it restarted".
+            # Default to 0 unless explicitly enabled.
+            allow_restarts = _should_allow_full_restart_retry()
+            max_restarts = int(os.getenv("CREW_MAX_RETRIES", "0" if not allow_restarts else "1"))
             fallback_model = os.getenv("CREW_FALLBACK_MODEL", "").strip()
 
             files: dict[str, str] | None = None
             last_exc: Exception | None = None
-            for attempt in range(max_retries + 1):
+
+            for attempt in range(max_restarts + 1):
                 try:
                     if attempt > 0 and fallback_model:
                         os.environ["MODEL"] = fallback_model
                         logger.warning(
-                            "Retrying job %s with fallback model '%s' (attempt %d/%d)",
+                            "Retrying job %s with fallback model '%s' (full restart attempt %d/%d)",
                             job_id,
                             fallback_model,
                             attempt + 1,
-                            max_retries + 1,
+                            max_restarts + 1,
                         )
                     elif attempt > 0:
                         logger.warning(
-                            "Retrying job %s with same model (attempt %d/%d)",
+                            "Retrying job %s with same model (full restart attempt %d/%d)",
                             job_id,
                             attempt + 1,
-                            max_retries + 1,
+                            max_restarts + 1,
                         )
 
                     files = await asyncio.wait_for(
@@ -149,36 +216,161 @@ class CrewRunner:
                         timeout=timeout_seconds,
                     )
                     break
+
                 except Exception as exc:
                     last_exc = exc
+
+                    # If we already have some files from a prior run (rare), try the fast alternate path.
+                    # More importantly: if the error is retryable (timeout/rate-limit), DO NOT restart the
+                    # whole crew by default — instead fail fast with guidance.
                     if isinstance(exc, asyncio.TimeoutError) or _is_retryable_llm_error(exc):
-                        if attempt < max_retries:
+                        if attempt < max_restarts and allow_restarts:
                             await asyncio.sleep(min(2 * (attempt + 1), 8))
                             continue
+
+                        raise RuntimeError(
+                            "Generation hit a retryable upstream error (timeout/rate-limit). "
+                            "To avoid full restarts, retries are disabled by default. "
+                            "If you want automatic restarts, set CREW_ALLOW_RESTART_RETRIES=1 and CREW_MAX_RETRIES=1. "
+                            f"Original error: {exc}"
+                        ) from exc
+
                     raise
+
             if files is None and last_exc:
                 raise last_exc
 
-            # Process any asset downloads embedded in the output
             downloads = files.pop("__downloads__", None)
             if downloads and isinstance(downloads, list):
                 logger.info("Processing %d asset downloads …", len(downloads))
                 asset_map = await AssetBridge.process_downloads(downloads)
                 files.update(asset_map)
 
+            files = ReactProjectFormatter.normalize(files)
+
+            # Persist an early snapshot (post-normalization) so we never lose output.
+            CrewRunner._persist_local_snapshot(
+                job_id=job_id,
+                resume_input=resume_input,
+                user_prompt=user_prompt,
+                files=files,
+                title_hint="(snapshot) " + (
+                    (resume_input.get("personal", {}) or {}).get("name")
+                    or resume_input.get("name")
+                    or "Generated Portfolio"
+                ),
+            )
+
+            jobs_store[job_id] = JobStatus(
+                job_id=job_id,
+                status=JobStatusEnum.PROCESSING,
+                progress=95,
+                current_agent="preflight",
+            )
+
+            try:
+                files = await PreflightRunner.run_preflight(files=files, job_id=job_id)
+            except PreflightError as exc:
+                # Save failing output snapshot for debugging before attempting fixup.
+                CrewRunner._persist_local_snapshot(
+                    job_id=job_id,
+                    resume_input=resume_input,
+                    user_prompt=user_prompt,
+                    files=files,
+                    title_hint="(preflight-failed) " + (
+                        (resume_input.get("personal", {}) or {}).get("name")
+                        or resume_input.get("name")
+                        or "Generated Portfolio"
+                    ),
+                    failure_note=str(exc),
+                )
+
+                # Alternate path: attempt a cheap "fix-only" run (checking/testing) instead of restarting full crew.
+                try:
+                    jobs_store[job_id] = JobStatus(
+                        job_id=job_id,
+                        status=JobStatusEnum.PROCESSING,
+                        progress=96,
+                        current_agent="preflight_fixup",
+                    )
+                    files = await asyncio.wait_for(
+                        asyncio.to_thread(CrewRunner._run_fast_fixup_sync, files, job_id, jobs_store),
+                        timeout=90,
+                    )
+                    files = ReactProjectFormatter.normalize(files)
+
+                    # Save post-fix snapshot too.
+                    CrewRunner._persist_local_snapshot(
+                        job_id=job_id,
+                        resume_input=resume_input,
+                        user_prompt=user_prompt,
+                        files=files,
+                        title_hint="(fixup-snapshot) " + (
+                            (resume_input.get("personal", {}) or {}).get("name")
+                            or resume_input.get("name")
+                            or "Generated Portfolio"
+                        ),
+                    )
+
+                    files = await PreflightRunner.run_preflight(files=files, job_id=job_id)
+                except Exception:
+                    detail = str(exc)
+                    if getattr(exc, "issues", None):
+                        detail += "\n" + "\n".join(f"- {i.code}: {i.message}" for i in exc.issues)
+                    raise RuntimeError("Preflight failed and fixup could not recover.\n" + detail) from exc
+
+            # Persist locally so the last run is always available on disk.
+            preview_url = None
+            try:
+                from app.services.local_store.store import LocalPortfolioStore
+
+                store = LocalPortfolioStore()
+                portfolio_title = (
+                    (resume_input.get("personal", {}) or {}).get("name")
+                    or resume_input.get("name")
+                    or "Generated Portfolio"
+                )
+                meta = store.create(
+                    title=portfolio_title,
+                    prompt=user_prompt,
+                    resume_data=resume_input,
+                    files=files or {},
+                    job_id=job_id,
+                )
+
+                # Start a live Vite dev server for the generated project
+                try:
+                    project_dir = store._portfolio_dir(meta.id) / "files"
+                    if project_dir.is_dir():
+                        manager = DevServerManager.instance()
+                        preview_url = await manager.start_server(
+                            job_id=job_id,
+                            project_dir=project_dir,
+                        )
+                        logger.info("Live preview for job %s at %s", job_id, preview_url)
+                except Exception as _preview_exc:
+                    logger.warning(
+                        "Job %s completed but live preview failed to start: %s",
+                        job_id, _preview_exc,
+                    )
+            except Exception as _persist_exc:
+                logger.warning("Job %s completed but local persistence failed: %s", job_id, _persist_exc)
+
             jobs_store[job_id] = JobStatus(
                 job_id=job_id,
                 status=JobStatusEnum.COMPLETED,
                 progress=100,
                 files=files,
+                preview_url=preview_url,
             )
-            logger.info("Job %s completed with %d files", job_id, len(files))
+
+            logger.info("Job %s completed with %d files (preview: %s)", job_id, len(files), preview_url or "N/A")
 
         except asyncio.TimeoutError:
-            timeout_seconds = int(os.getenv("CREW_JOB_TIMEOUT_SECONDS", "1200"))
+            timeout_seconds = int(os.getenv("CREW_JOB_TIMEOUT_SECONDS", "600"))
             msg = (
                 f"Generation timed out after {timeout_seconds}s. "
-                "Please retry with a shorter prompt or a faster model."
+                "Try a shorter prompt, disable research/assets, or use a faster model."
             )
             logger.error("Job %s timed out after %ss", job_id, timeout_seconds)
             jobs_store[job_id] = JobStatus(
@@ -308,3 +500,62 @@ class CrewRunner:
         # Fallback: wrap raw output
         logger.warning("Could not parse crew output as JSON — wrapping raw output.")
         return {"index.html": raw}
+
+    @staticmethod
+    def _run_fast_fixup_sync(
+        files: dict[str, str],
+        job_id: str,
+        jobs_store: dict[str, JobStatus],
+    ) -> dict[str, str]:
+        """Small alternate path that tries to fix obvious build/runtime issues.
+
+        Purpose: avoid re-running the entire generation crew after a near-complete output.
+        Runs ONLY checking + testing steps (prompted to patch the existing file map).
+        """
+
+        _ensure_crew_on_path()
+        _normalize_model_env_for_provider()
+
+        from website_maker.crew import ResumeGalaCrew  # noqa: E402
+        from crewai import Crew, Process  # type: ignore
+
+        # Keep job progress moving for UI.
+        jobs_store[job_id] = JobStatus(
+            job_id=job_id,
+            status=JobStatusEnum.PROCESSING,
+            progress=97,
+            current_agent="fast_fixup",
+        )
+
+        crew_instance = ResumeGalaCrew()
+        checking_task = crew_instance.checking_task()
+        testing_task = crew_instance.testing_task()
+
+        # Only the agents needed for these tasks.
+        checking_agent = crew_instance.checking_agent()
+        testing_agent = crew_instance.testing_agent()
+
+        mini_crew = Crew(
+            agents=[checking_agent, testing_agent],
+            tasks=[checking_task, testing_task],
+            process=Process.sequential,
+            verbose=True,
+            max_rpm=15,
+        )
+
+        # Provide the existing files via the standard input channel.
+        result = mini_crew.kickoff(
+            inputs={
+                "resume_input": {},
+                "user_prompt": "Preflight fixup mode: DO NOT change content. Only fix build/runtime problems. Return final_files.",
+                "current_files": json.dumps(files),
+            }
+        )
+
+        patched = CrewRunner._parse_crew_output(result)
+
+        # If the mini crew returned only a raw wrapper, fall back to original files.
+        if "index.html" in patched and len(patched) == 1 and patched.get("index.html", "").strip().startswith("{") is False:
+            return files
+
+        return {str(k): str(v) for k, v in patched.items()}

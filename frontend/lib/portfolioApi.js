@@ -1,88 +1,50 @@
-import { createClient } from '@/lib/supabase';
+// No Supabase for local-only mode.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-async function getAuthHeaders() {
-  const supabase = createClient();
-  if (!supabase) return {};
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return {};
-  return { Authorization: `Bearer ${session.access_token}` };
-}
+// Prefer explicit NEXT_PUBLIC_API_URL, otherwise default to 127.0.0.1 (more reliable than localhost on some setups).
+// If you later add a Next.js rewrite/proxy, you can set NEXT_PUBLIC_API_URL to '' and use same-origin '/api'.
+const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = RAW_API_URL === '' ? '' : (RAW_API_URL || 'http://127.0.0.1:8000');
 
 export async function savePortfolio({ title, prompt, resumeData, files, jobId }) {
-  const headers = await getAuthHeaders();
-  if (!headers.Authorization) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_URL}/api/portfolios/`, {
+  const res = await fetch(`${API_URL}/api/local-portfolios/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: title || 'Untitled Portfolio',
       prompt: prompt || null,
       resume_data: resumeData || null,
-      files,
+      files: files || {},
       job_id: jobId || null,
     }),
   });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to save portfolio');
+    throw new Error(err.detail || 'Failed to save locally');
   }
   return res.json();
 }
 
 export async function listPortfolios() {
-  const headers = await getAuthHeaders();
-  if (!headers.Authorization) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_URL}/api/portfolios/`, {
-    headers,
-  });
-
-  if (!res.ok) throw new Error('Failed to fetch portfolios');
+  const res = await fetch(`${API_URL}/api/local-portfolios/`);
+  if (!res.ok) throw new Error('Failed to fetch local portfolios');
   return res.json();
 }
 
 export async function getPortfolio(id) {
-  const headers = await getAuthHeaders();
-  if (!headers.Authorization) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_URL}/api/portfolios/${id}`, {
-    headers,
-  });
-
+  const res = await fetch(`${API_URL}/api/local-portfolios/${id}`);
   if (!res.ok) throw new Error('Portfolio not found');
   return res.json();
 }
 
-export async function updatePortfolio(id, { title, files }) {
-  const headers = await getAuthHeaders();
-  if (!headers.Authorization) throw new Error('Not authenticated');
-
-  const body = {};
-  if (title !== undefined) body.title = title;
-  if (files !== undefined) body.files = files;
-
-  const res = await fetch(`${API_URL}/api/portfolios/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) throw new Error('Failed to update portfolio');
-  return res.json();
+// Local store is immutable for now (each generated work saved as a new folder).
+export async function updatePortfolio(_id, _payload) {
+  throw new Error('Update is disabled in local-only mode. Save will create a new copy.');
 }
 
 export async function deletePortfolio(id) {
-  const headers = await getAuthHeaders();
-  if (!headers.Authorization) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_URL}/api/portfolios/${id}`, {
+  const res = await fetch(`${API_URL}/api/local-portfolios/${id}`, {
     method: 'DELETE',
-    headers,
   });
-
-  if (!res.ok) throw new Error('Failed to delete portfolio');
+  if (!res.ok) throw new Error('Failed to delete local portfolio');
 }

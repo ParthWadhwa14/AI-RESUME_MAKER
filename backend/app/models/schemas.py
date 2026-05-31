@@ -134,6 +134,9 @@ class JobStatus(BaseModel):
     error: Optional[str] = Field(
         None, description="Error message if the job failed"
     )
+    preview_url: Optional[str] = Field(
+        None, description="Live dev-server URL for the generated portfolio"
+    )
 
 
 # ---------------------------------------------------------------------------
