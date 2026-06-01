@@ -324,6 +324,7 @@ def parse_text_resume(text: str) -> dict[str, Any]:
         "experience": experience,
         "skills": skills,
         "projects": projects,
+        "additional_context": [],
         "_raw_resume_text": full_text[:20000],
         "_parser_confidence_notes": [
             "Section-block parser applied for experience/education/projects."

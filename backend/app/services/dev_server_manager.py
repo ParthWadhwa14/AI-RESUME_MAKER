@@ -37,7 +37,7 @@ _SERVER_READY_TIMEOUT = int(os.getenv("PREVIEW_SERVER_READY_TIMEOUT", "30"))  # 
 
 @dataclass
 class _ServerEntry:
-    """Tracks a running Vite dev server."""
+    """Tracks a running preview server (Vite or plain static)."""
     job_id: str
     port: int
     process: asyncio.subprocess.Process
@@ -47,7 +47,9 @@ class _ServerEntry:
 
     @property
     def url(self) -> str:
-        return f"http://localhost:{self.port}"
+        # Use explicit IPv4 loopback to avoid localhost -> ::1 resolution mismatches
+        # that can lead to "refused to connect" in browsers/iframes on some macOS setups.
+        return f"http://127.0.0.1:{self.port}"
 
     @property
     def is_stale(self) -> bool:
@@ -131,24 +133,48 @@ class DevServerManager:
         logger.info("npm install completed successfully in %s", project_dir)
 
     @staticmethod
-    async def _wait_for_server(port: int, timeout: int = _SERVER_READY_TIMEOUT) -> bool:
-        """Poll until the dev server responds on the given port."""
-        import httpx
+    async def _wait_for_http_200(url: str, timeout: int) -> bool:
+        """Poll until an HTTP server responds (stdlib-only)."""
+        import urllib.request
+        import urllib.error
 
-        url = f"http://localhost:{port}"
         deadline = time.time() + timeout
 
-        async with httpx.AsyncClient() as client:
-            while time.time() < deadline:
-                try:
-                    resp = await client.get(url, timeout=2)
-                    if resp.status_code < 500:
-                        return True
-                except Exception:
-                    pass
-                await asyncio.sleep(0.5)
+        def _probe() -> bool:
+            try:
+                with urllib.request.urlopen(url, timeout=2) as resp:  # nosec - local dev URL
+                    status = getattr(resp, "status", 200)
+                    return int(status) < 500
+            except (urllib.error.URLError, ValueError):
+                return False
 
+        while time.time() < deadline:
+            ok = await asyncio.to_thread(_probe)
+            if ok:
+                return True
+            await asyncio.sleep(0.5)
         return False
+
+    @staticmethod
+    def _is_vite_project(project_dir: Path) -> bool:
+        """Return True if this folder looks like a Vite project."""
+        pkg = project_dir / "package.json"
+        # If there's no package.json, it is definitely not a Vite project.
+        if not pkg.is_file():
+            return False
+        # If index.html exists, that's a strong Vite signal.
+        if (project_dir / "index.html").is_file():
+            return True
+        # Be conservative: require a Vite config OR src/main.* entry.
+        if (project_dir / "vite.config.js").is_file() or (project_dir / "vite.config.ts").is_file():
+            return True
+        if (project_dir / "src" / "main.jsx").is_file() or (project_dir / "src" / "main.tsx").is_file() or (project_dir / "src" / "main.js").is_file() or (project_dir / "src" / "main.ts").is_file():
+            return True
+        return False
+
+    @staticmethod
+    def _has_root_index_html(project_dir: Path) -> bool:
+        return (project_dir / "index.html").is_file()
 
     async def start_server(
         self,
@@ -157,22 +183,12 @@ class DevServerManager:
         *,
         skip_install: bool = False,
     ) -> str:
-        """Start a Vite dev server for the given project.
+        """Start a preview server for the given project.
 
-        Parameters
-        ----------
-        job_id:
-            Unique identifier for this portfolio/job.
-        project_dir:
-            Path to the directory containing the generated Vite project
-            (must already have files written to disk, including package.json).
-        skip_install:
-            If True, skip npm install (e.g., if already installed).
+        - If `project_dir` looks like a Vite project, start Vite.
+        - Otherwise, if it contains a root `index.html`, start a simple static server.
 
-        Returns
-        -------
-        str
-            The URL where the dev server is accessible (e.g., ``http://localhost:5201``).
+        This avoids trying to launch Vite for plain HTML/CSS/JS outputs.
         """
         async with self._lock:
             # If a server is already running for this job, return its URL
@@ -185,16 +201,66 @@ class DevServerManager:
             port = self._allocate_port()
 
         try:
-            # Run npm install if needed
+            # Decide server type
+            is_vite = self._is_vite_project(project_dir)
+            has_index = self._has_root_index_html(project_dir)
+
+            if not is_vite:
+                # Plain static site: require index.html
+                if not has_index:
+                    raise RuntimeError(
+                        "Preview project is not a Vite project and no root index.html was found. "
+                        "Generate either a Vite scaffold (package.json + index.html) or a plain static site (index.html)."
+                    )
+
+                python = shutil.which("python3") or shutil.which("python")
+                if not python:
+                    raise RuntimeError("python3 not found on PATH")
+
+                logger.info("Starting static http.server for job %s on port %d …", job_id, port)
+
+                proc = await asyncio.create_subprocess_exec(
+                    python,
+                    "-m",
+                    "http.server",
+                    str(port),
+                    "--bind",
+                    "127.0.0.1",
+                    cwd=str(project_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env={
+                        **os.environ,
+                        "PYTHONUNBUFFERED": "1",
+                    },
+                )
+
+                entry = _ServerEntry(job_id=job_id, port=port, process=proc, project_dir=project_dir)
+
+                # Wait for readiness (root page)
+                ready = await self._wait_for_http_200(entry.url, _SERVER_READY_TIMEOUT)
+                if not ready and proc.returncode is not None:
+                    out_b = await proc.stdout.read() if proc.stdout else b""
+                    out = out_b.decode("utf-8", errors="replace")
+                    self._release_port(port)
+                    raise RuntimeError(
+                        f"static http.server exited immediately (rc={proc.returncode}):\n{out[-2000:]}"
+                    )
+
+                async with self._lock:
+                    self._servers[job_id] = entry
+
+                logger.info("Static preview server for job %s is live at %s", job_id, entry.url)
+                return entry.url
+
+            # Vite project
             if not skip_install:
                 await self._run_npm_install(project_dir)
 
-            # Start vite dev server
             npm = shutil.which("npm")
             if not npm:
                 raise RuntimeError("npm not found on PATH")
 
-            # Use npx vite directly with --port to avoid issues with npm run dev
             npx = shutil.which("npx")
             if not npx:
                 npx = npm.replace("npm", "npx")
@@ -202,21 +268,27 @@ class DevServerManager:
             logger.info("Starting Vite dev server for job %s on port %d …", job_id, port)
 
             proc = await asyncio.create_subprocess_exec(
-                npx, "vite", "--port", str(port), "--host", "localhost", "--strictPort",
+                npx,
+                "vite",
+                "--port",
+                str(port),
+                "--host",
+                "127.0.0.1",
+                "--strictPort",
                 cwd=str(project_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env={
                     **os.environ,
                     "NODE_ENV": "development",
-                    "BROWSER": "none",  # Don't auto-open browser
+                    "BROWSER": "none",
                 },
             )
 
-            # Wait for server to become ready
-            ready = await self._wait_for_server(port)
+            entry = _ServerEntry(job_id=job_id, port=port, process=proc, project_dir=project_dir)
+
+            ready = await self._wait_for_http_200(entry.url, _SERVER_READY_TIMEOUT)
             if not ready:
-                # Check if process crashed
                 if proc.returncode is not None:
                     out_b = await proc.stdout.read() if proc.stdout else b""
                     out = out_b.decode("utf-8", errors="replace")
@@ -224,19 +296,13 @@ class DevServerManager:
                     raise RuntimeError(
                         f"Vite dev server exited immediately (rc={proc.returncode}):\n{out[-2000:]}"
                     )
-                # Server might just be slow; log warning but continue
                 logger.warning(
                     "Dev server for job %s on port %d did not respond within %ds, "
                     "but process is still running — continuing anyway.",
-                    job_id, port, _SERVER_READY_TIMEOUT,
+                    job_id,
+                    port,
+                    _SERVER_READY_TIMEOUT,
                 )
-
-            entry = _ServerEntry(
-                job_id=job_id,
-                port=port,
-                process=proc,
-                project_dir=project_dir,
-            )
 
             async with self._lock:
                 self._servers[job_id] = entry

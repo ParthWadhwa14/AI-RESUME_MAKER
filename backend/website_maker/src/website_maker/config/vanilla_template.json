@@ -1,0 +1,5 @@
+{
+  "index.html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Portfolio</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n    <div id=\"app\">\n        <header>\n            <h1>Generated Portfolio</h1>\n            <p>Your content will appear here.</p>\n        </header>\n    </div>\n    <script src=\"script.js\"></script>\n</body>\n</html>\n",
+  "style.css": ":root {\n  color-scheme: dark;\n  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;\n  --bg-color: #0b1020;\n  --text-color: #eef2ff;\n}\n\n* {\n  box-sizing: border-box;\n}\n\nbody {\n  margin: 0;\n  background-color: var(--bg-color);\n  color: var(--text-color);\n  min-height: 100vh;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  padding: 24px;\n}\n\n#app {\n  max-width: 1200px;\n  width: 100%;\n}\n",
+  "script.js": "document.addEventListener('DOMContentLoaded', () => {\n  console.log('Portfolio initialized.');\n});\n"
+}

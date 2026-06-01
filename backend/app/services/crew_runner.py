@@ -24,7 +24,7 @@ from typing import Any
 
 from app.models.schemas import JobStatus, JobStatusEnum
 from app.services.asset_bridge import AssetBridge
-from app.services.react_project_formatter import ReactProjectFormatter
+from app.services.vanilla_project_formatter import VanillaProjectFormatter
 from app.services.preflight_runner import PreflightError, PreflightRunner
 from app.services.dev_server_manager import DevServerManager
 
@@ -246,7 +246,7 @@ class CrewRunner:
                 asset_map = await AssetBridge.process_downloads(downloads)
                 files.update(asset_map)
 
-            files = ReactProjectFormatter.normalize(files)
+            files = VanillaProjectFormatter.normalize(files)
 
             # Persist an early snapshot (post-normalization) so we never lose output.
             CrewRunner._persist_local_snapshot(
@@ -299,7 +299,7 @@ class CrewRunner:
                         asyncio.to_thread(CrewRunner._run_fast_fixup_sync, files, job_id, jobs_store),
                         timeout=240,
                     )
-                    files = ReactProjectFormatter.normalize(files)
+                    files = VanillaProjectFormatter.normalize(files)
 
                     # Save post-fix snapshot too.
                     CrewRunner._persist_local_snapshot(

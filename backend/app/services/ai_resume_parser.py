@@ -33,7 +33,8 @@ Convert the provided raw resume text into STRICT JSON with this schema:
   "education": [{"institution":"string","degree":"string","timeline":"string"}],
   "experience": [{"company":"string","role":"string","timeline":"string","highlights":["string"]}],
   "skills": ["string"],
-  "projects": [{"title":"string","description":"string","technologies":["string"]}]
+  "projects": [{"title":"string","description":"string","technologies":["string"]}],
+  "additional_context": ["string"]
 }
 
 Rules:
@@ -41,6 +42,7 @@ Rules:
 - Do not invent details not present in input.
 - Keep experience/project entries deduplicated and concise.
 - If uncertain, keep fields empty instead of hallucinating.
+- Use 'additional_context' to capture any important text, certifications, awards, or details that do not fit into the other specific sections. DO NOT SKIP anything valuable.
 """
 
 

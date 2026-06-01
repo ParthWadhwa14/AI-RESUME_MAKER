@@ -562,7 +562,7 @@ class ResumeGalaCrew:
     template_path = (
         Path(__file__).resolve().parent
         / "config"
-        / "react_template.json"
+        / "vanilla_template.json"
     )
 
     # ==========================================
@@ -623,14 +623,14 @@ class ResumeGalaCrew:
                 ) as f:
                     template_map = json.load(f)
 
-                inputs["react_template"] = json.dumps(
+                inputs["vanilla_template"] = json.dumps(
                     template_map,
                     indent=2,
                 )
 
         except Exception as exc:
             logger.warning(
-                "Could not load react template scaffold: %s",
+                "Could not load vanilla template scaffold: %s",
                 exc,
             )
 

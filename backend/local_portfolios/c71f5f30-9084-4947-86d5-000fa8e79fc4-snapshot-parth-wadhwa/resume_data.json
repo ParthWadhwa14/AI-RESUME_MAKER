@@ -1,0 +1,126 @@
+{
+  "personal": {
+    "name": "Parth Wadhwa",
+    "title": "AI Full-Stack Developer",
+    "social": {
+      "github": "github.com/ParthWadhwa14",
+      "linkedin": "https://www.linkedin.com/in/parth-wadhwa-855650323/"
+    }
+  },
+  "education": [
+    {
+      "institution": "Indian Institute of Technology (IIT) Delhi",
+      "degree": "B.Tech in Chemical Engineering",
+      "timeline": "2024 - Present"
+    }
+  ],
+  "experience": [
+    {
+      "company": "Fumind.ai",
+      "role": "AI Intern",
+      "timeline": "Feb - April 2026",
+      "highlights": [
+        "Built a one-shot image segmentation pipeline using OpenCV and vision-language models",
+        "Worked on AI-assisted computer vision workflows",
+        "Integrated the system into the company monorepo",
+        "Collaborated in a fast-paced development environment using Git-based workflows and AI coding tools"
+      ]
+    }
+  ],
+  "skills": [
+    "Python",
+    "JavaScript",
+    "C++",
+    "Java",
+    "SQL",
+    "LangGraph",
+    "LangChain",
+    "CrewAI",
+    "AutoGen",
+    "MCP",
+    "n8n",
+    "React",
+    "Node.js",
+    "TensorFlow",
+    "PyTorch",
+    "scikit-learn",
+    "OpenCV",
+    "OpenAI API / SDK",
+    "Gemini API",
+    "Hugging Face",
+    "LLaMA",
+    "Prompt Engineering",
+    "Git",
+    "GitHub",
+    "Supabase",
+    "MongoDB",
+    "Jupyter Notebook",
+    "Figma",
+    "Agentic Workflows",
+    "Full-Stack Development",
+    "Computer Vision",
+    "Machine Learning"
+  ],
+  "projects": [
+    {
+      "title": "Agentic RAG System",
+      "description": "Engineered an advanced Retrieval-Augmented Generation (RAG) system utilizing LangGraph",
+      "technologies": [
+        "LangGraph",
+        "Python",
+        "OpenAI SDK",
+        "ChromaDB"
+      ]
+    },
+    {
+      "title": "ResearchSync - AI-Powered Research Collaboration Platform",
+      "description": "Built a full-stack collaborative platform with real-time chat, Kanban task management, and shared research workspaces",
+      "technologies": [
+        "React",
+        "Node.js",
+        "Supabase",
+        "Gemini API"
+      ]
+    },
+    {
+      "title": "Network Intrusion Detection System",
+      "description": "Designed an ML pipeline for malicious traffic detection using preprocessing, feature engineering, and supervised learning",
+      "technologies": [
+        "Python",
+        "scikit-learn"
+      ]
+    },
+    {
+      "title": "SehatSaathi-AI",
+      "description": "Built an AI-powered healthcare assistance platform providing symptom-based guidance, medical information, and intelligent conversational support",
+      "technologies": [
+        "React",
+        "Node.js",
+        "AI APIs"
+      ]
+    },
+    {
+      "title": "Mental-Health-AI-Copilot",
+      "description": "Developed an AI-driven mental health support assistant capable of empathetic conversations, personalized guidance, and wellness-focused interactions",
+      "technologies": [
+        "React",
+        "Node.js",
+        "Generative AI"
+      ]
+    }
+  ],
+  "_profile_enrichment": {
+    "github": {
+      "error": "Invalid GitHub URL"
+    },
+    "linkedin": {
+      "profile_url": "https://www.linkedin.com/in/parth-wadhwa-855650323/",
+      "error": "Invalid status code '999 Request denied' for url 'https://www.linkedin.com/in/parth-wadhwa-855650323/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
+      "note": "Could not fetch LinkedIn profile metadata."
+    }
+  },
+  "name": "Parth Wadhwa",
+  "title": "AI Full-Stack Developer",
+  "github_url": "github.com/ParthWadhwa14",
+  "linkedin_url": "https://www.linkedin.com/in/parth-wadhwa-855650323/"
+}

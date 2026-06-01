@@ -93,6 +93,7 @@ if _extra:
 # Allow preview dev server ports (5200–5220)
 for _port in range(5200, 5221):
     _ALLOWED_ORIGINS.append(f"http://localhost:{_port}")
+    _ALLOWED_ORIGINS.append(f"http://127.0.0.1:{_port}")
 
 app.add_middleware(
     CORSMiddleware,
