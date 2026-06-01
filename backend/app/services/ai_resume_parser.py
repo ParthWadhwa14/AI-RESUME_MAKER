@@ -65,6 +65,9 @@ def parse_resume_with_ai(raw_resume_text: str) -> dict[str, Any]:
     """
     Parse resume text via a dedicated CrewAI single-agent pipeline.
     """
+    from app.services.crew_runner import _normalize_model_env_for_provider
+    _normalize_model_env_for_provider()
+    
     parser_agent = Agent(
         role="Resume Parsing Specialist",
         goal="Extract structured resume JSON accurately",

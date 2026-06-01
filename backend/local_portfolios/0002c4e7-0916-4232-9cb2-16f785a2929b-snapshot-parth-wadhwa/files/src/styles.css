@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root {
+ --primary-color: #2f3436;
+ --secondary-color: #4b5154;
+ --accent-color: #03a9f4;
+ --background-color: #1a1d23;
+ --text-color: #ffffff;
+ --subtext-color: #b3b3b3;
+}
+
+* {
+ box-sizing: border-box;
+}
+
+body {
+ margin: 0;
+ background-color: var(--background-color);
+ color: var(--text-color);
+}
+
+.app-shell {
+ min-height: 100vh;
+ display: grid;
+ place-items: center;
+ text-align: center;
+ padding: 24px;
+}
+
+.section {
+ margin-bottom: 48px;
+}
+
+.project-card {
+ background-color: var(--primary-color);
+ padding: 24px;
+ border-radius: 8px;
+ box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.project-card h3 {
+ margin-top: 0;
+}
+
+.tech-stack {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px;
+}
+
+.tech-stack span {
+ background-color: var(--secondary-color);
+ padding: 8px;
+ border-radius: 4px;
+}
+
+.skills-grid {
+ display: grid;
+ grid-template-columns: repeat(2, 1fr);
+ gap: 24px;
+}
+
+.skill-category {
+ background-color: var(--primary-color);
+ padding: 24px;
+ border-radius: 8px;
+ box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.skill-category h3 {
+ margin-top: 0;
+}

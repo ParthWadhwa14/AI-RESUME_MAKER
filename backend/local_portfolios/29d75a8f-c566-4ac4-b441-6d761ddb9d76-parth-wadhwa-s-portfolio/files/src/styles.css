@@ -1,0 +1,1 @@
+@tailwind base; @tailwind components; @tailwind utilities; body { @apply bg-gray-900; @apply text-white; } h1 { @apply text-5xl; @apply font-bold; } button { @apply bg-blue-500; @apply hover:bg-blue-700; @apply focus:outline-none; @apply focus:ring; } .card { @apply bg-white; @apply rounded; @apply shadow-md; @apply p-4; } .card:hover { @apply bg-gray-100; }

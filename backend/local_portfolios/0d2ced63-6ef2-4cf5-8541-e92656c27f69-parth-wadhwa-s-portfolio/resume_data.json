@@ -1,0 +1,69 @@
+{
+  "personal": {
+    "name": "Parth Wadhwa",
+    "title": "B.Tech Chemical Engineering",
+    "social": {
+      "github": "",
+      "linkedin": "https://www.linkedin.com/in/parth-wadhwa-855650323"
+    }
+  },
+  "education": [
+    {
+      "institution": "Indian Institute of Technology (IIT) DelhiNew Delhi, India",
+      "degree": "B.Tech in Chemical Engineering 2024 - Present",
+      "timeline": "2024 - Present"
+    }
+  ],
+  "experience": [
+    {
+      "company": "Fumind.aiRemote Feb - April 2026",
+      "role": "AI Intern",
+      "timeline": "April 2026",
+      "highlights": [
+        "Built aone-shot image segmentation pipeline using OpenCV and vision-language models to segment objects from a",
+        "single reference image.",
+        "Worked on AI-assisted computer vision workflows involving preprocessing, contour extraction, and prompt-guided",
+        "segmentation."
+      ]
+    }
+  ],
+  "skills": [
+    "Python",
+    "JavaScript",
+    "C++",
+    "Java",
+    "SQL",
+    "LangChain",
+    "CrewAI",
+    "AutoGen",
+    "MCP",
+    "n8n",
+    "F rameworks & Libraries:React",
+    "Node.js",
+    "TensorFlow",
+    "PyTorch",
+    "scikit-learn",
+    "OpenCV",
+    "OpenAI API",
+    "SDK",
+    "Gemini API",
+    "Hugging Face",
+    "LLaMA",
+    "Prompt Engineering",
+    "T ools:Git",
+    "GitHub",
+    "Supabase",
+    "MongoDB",
+    "Jupyter Notebook",
+    "Figma",
+    "Core Areas:Agentic Workflows",
+    "Full-Stack Development"
+  ],
+  "projects": [
+    {
+      "title": "Agentic RAG SystemLangGraph, Python, OpenAI SDK, ChromaDB",
+      "description": "Engineered an advanced Retrieval-Augmented Generation (RAG) system utilizing LangGraph to design complex, stateful multi-turn agentic loops. Implemented semantic document parsing, recursive text splitting, and vector embeddings to extract and index data from custom enterprise knowledge bases. Designed fallback execution routers and self-correction reflection nodes that dynamically evaluate document relevance and self-correct hallucinations before output generation. ResearchSync - AI-Powered Rese",
+      "technologies": []
+    }
+  ]
+}

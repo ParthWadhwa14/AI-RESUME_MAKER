@@ -1,0 +1,2 @@
+import { Link } from 'lucide-react';
+import React from 'react'; import { Link } from 'react-router-dom'; function Home() { return ( <div className="bg-gray-900 text-white p-4 md:p-6 lg:p-8"> <h1 className="text-5xl font-bold mb-4">Welcome to our website</h1> <p className="text-lg mb-6"> Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed sit amet nulla auctor, vestibulum magna sed, convallis ex. </p> <Link to="/about" className="bg-orange-500 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded"> Learn More </Link> </div> ); } export default Home;

@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+ --color-primary: #2f3436;
+ --color-secondary: #4f5154;
+ --color-accent: #8b9467;
+ --color-background: #1a1d23;
+ --color-text: #ffffff;
+ --color-subtext: #b3b3b3;
+}
+
+* {
+ box-sizing: border-box;
+}
+
+body {
+ margin: 0;
+ background: var(--color-background);
+ color: var(--color-text);
+ font-family: Inter, sans-serif;
+}
+
+.header {
+ background: var(--color-primary);
+ padding: 1rem;
+ text-align: center;
+}
+
+.hero {
+ background: var(--color-secondary);
+ padding: 2rem;
+ text-align: center;
+}
+
+.projects {
+ display: flex;
+ flex-wrap: wrap;
+ justify-content: center;
+}
+
+.project-card {
+ background: var(--color-background);
+ padding: 1rem;
+ margin: 1rem;
+ border: 1px solid var(--color-subtext);
+ border-radius: 0.5rem;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.tech-stack {
+ display: flex;
+ flex-wrap: wrap;
+}
+
+.tech-stack span {
+ background: var(--color-primary);
+ padding: 0.5rem;
+ margin: 0.5rem;
+ border-radius: 0.5rem;
+}
+
+.skills {
+ display: flex;
+ flex-wrap: wrap;
+ justify-content: center;
+}
+
+.skill-card {
+ background: var(--color-background);
+ padding: 1rem;
+ margin: 1rem;
+ border: 1px solid var(--color-subtext);
+ border-radius: 0.5rem;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.experience {
+ background: var(--color-secondary);
+ padding: 2rem;
+ text-align: center;
+}
+
+a {
+ text-decoration: none;
+ color: var(--color-accent);
+}
+
+a:hover {
+ color: var(--color-text);
+}

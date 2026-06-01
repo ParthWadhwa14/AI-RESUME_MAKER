@@ -297,21 +297,18 @@ def parse_text_resume(text: str) -> dict[str, Any]:
         parsed = _parse_experience_block(block)
         if parsed:
             experience.append(parsed)
-    experience = experience[:4]
 
     education: list[dict[str, Any]] = []
     for block in _split_into_blocks(sections.get("education", "")):
         parsed = _parse_education_block(block)
         if parsed:
             education.append(parsed)
-    education = education[:3]
 
     projects: list[dict[str, Any]] = []
     for block in _split_into_blocks(sections.get("projects", "")):
         parsed = _parse_project_block(block)
         if parsed:
             projects.append(parsed)
-    projects = projects[:5]
 
     return {
         "personal": {
@@ -329,8 +326,7 @@ def parse_text_resume(text: str) -> dict[str, Any]:
         "projects": projects,
         "_raw_resume_text": full_text[:20000],
         "_parser_confidence_notes": [
-            "Section-block parser applied for experience/education/projects.",
-            "Entry counts are capped to reduce duplicate hallucinated records.",
+            "Section-block parser applied for experience/education/projects."
         ],
     }
 

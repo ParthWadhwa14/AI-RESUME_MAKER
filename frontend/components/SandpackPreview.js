@@ -130,7 +130,7 @@ export default function SandpackPreview({ files, jobId, previewUrl: initialPrevi
     let cancelled = false;
     let timer = null;
     let attempts = 0;
-    const maxAttempts = 60; // 60 * 2s = 2 min max
+    const maxAttempts = 180; // 180 * 2s = 6 min max
 
     const poll = async () => {
       if (cancelled) return;

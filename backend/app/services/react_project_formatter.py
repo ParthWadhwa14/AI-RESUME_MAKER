@@ -52,7 +52,12 @@ class ReactProjectFormatter:
             token in "\n".join(out.get(p, "") for p in ("src/App.jsx", "src/App.tsx", "src/main.jsx", "src/main.tsx"))
             for token in ("bg-", "text-", "flex", "grid", "px-", "py-", "mt-", "mb-", "rounded", "shadow")
         )
-        if not uses_tailwind:
+        
+        # We must process the renaming logic if the files exist in `out`, 
+        # even if we didn't detect tailwind usage in the root components.
+        has_config = "postcss.config.js" in out or "tailwind.config.js" in out or "postcss.config.cjs" in out or "tailwind.config.cjs" in out
+        
+        if not uses_tailwind and not has_config:
             return
 
         is_esm = ReactProjectFormatter._is_esm_project(out)
@@ -155,11 +160,18 @@ class ReactProjectFormatter:
 
     @staticmethod
     def _ensure_index_html_valid(out: dict[str, str]) -> None:
-        """Repair common parse5-breaking meta tag mistakes by resetting index.html."""
+        """Repair common parse5-breaking meta tag mistakes and missing module types in index.html."""
         # This is a safe fallback to keep projects runnable.
         html = out.get("index.html")
         if not html or "<html" not in html:
             return
+            
+        # Ensure script tag has type="module" which Vite requires
+        import re
+        html = re.sub(r'<script\s+src="([^"]+)"', r'<script type="module" src="\1"', html)
+        html = re.sub(r"<script\s+src='([^']+)'", r"<script type='module' src='\1'", html)
+        out["index.html"] = html
+        
         # If a meta tag line is missing a closing ">" it often contains '<meta ' without a closing '/>' or '>'
         # Rather than fragile parsing, reset to known-good scaffold while preserving the title if present.
         if "<meta" in html and "/>" not in html and "</meta>" not in html:

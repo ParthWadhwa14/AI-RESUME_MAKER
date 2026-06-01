@@ -1,0 +1,9 @@
+{
+  "id": "399f09db-9477-4938-9a57-babd39356d53",
+  "title": "(preflight-failed) Parth Wadhwa",
+  "prompt": "Dark minimal with glassmorphism, which is very much tech-friendly.",
+  "job_id": "ceed1a44-e0a5-466d-b2a1-47f682dc33ed",
+  "created_at": "2026-06-01T18:35:16.862746+00:00",
+  "updated_at": "2026-06-01T18:35:16.862746+00:00",
+  "failure_note": "npm run build failed"
+}

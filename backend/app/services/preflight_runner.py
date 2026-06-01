@@ -21,9 +21,10 @@ class PreflightIssue:
 
 
 class PreflightError(RuntimeError):
-    def __init__(self, message: str, *, issues: list[PreflightIssue] | None = None) -> None:
+    def __init__(self, message: str, *, issues: list[PreflightIssue] | None = None, files: dict[str, str] | None = None) -> None:
         super().__init__(message)
         self.issues = issues or []
+        self.files = files
 
 
 class PreflightRunner:
@@ -310,28 +311,87 @@ class PreflightRunner:
             return out, issues
             
         changed = False
-        safe_versions = {
-            "autoprefixer": "^10.4.19",
-            "tailwindcss": "^3.4.4",
-            "postcss": "^8.4.38",
+        
+        # Enforce these core dependencies to exist and have safe versions
+        core_deps = {
+            "react": "^18.3.1",
+            "react-dom": "^18.3.1",
             "framer-motion": "^11.2.10",
             "lucide-react": "^0.395.0",
             "react-icons": "^5.2.1",
             "react-router-dom": "^6.24.0"
         }
+        core_dev_deps = {
+            "vite": "^5.3.1",
+            "@vitejs/plugin-react": "^4.3.1",
+            "tailwindcss": "^3.4.4",
+            "autoprefixer": "^10.4.19",
+            "postcss": "^8.4.38"
+        }
         
-        for dep_type in ["dependencies", "devDependencies"]:
-            deps = pkg.get(dep_type, {})
-            if isinstance(deps, dict):
-                for pkg_name, safe_version in safe_versions.items():
-                    if pkg_name in deps and deps[pkg_name] != safe_version:
-                        deps[pkg_name] = safe_version
-                        changed = True
-                        
+        if "dependencies" not in pkg or not isinstance(pkg["dependencies"], dict):
+            pkg["dependencies"] = {}
+        if "devDependencies" not in pkg or not isinstance(pkg["devDependencies"], dict):
+            pkg["devDependencies"] = {}
+
+        # Strip out hallucinations
+        if "lucide-react-native" in pkg["dependencies"]:
+            del pkg["dependencies"]["lucide-react-native"]
+            changed = True
+
+        for k, v in core_deps.items():
+            if pkg["dependencies"].get(k) != v:
+                pkg["dependencies"][k] = v
+                changed = True
+
+        for k, v in core_dev_deps.items():
+            if pkg["devDependencies"].get(k) != v:
+                pkg["devDependencies"][k] = v
+                changed = True
+                
+        # Fix missing scripts
+        if "scripts" not in pkg or not isinstance(pkg["scripts"], dict):
+            pkg["scripts"] = {}
+            changed = True
+        if pkg["scripts"].get("build") != "vite build":
+            pkg["scripts"]["build"] = "vite build"
+            changed = True
+        if pkg["scripts"].get("dev") != "vite":
+            pkg["scripts"]["dev"] = "vite"
+            changed = True
+
         if changed:
             out["package.json"] = json.dumps(pkg, indent=2) + "\n"
-            issues.append(PreflightIssue("sanitized_package_versions", "Forced stable versions for core dependencies"))
+            issues.append(PreflightIssue("sanitized_package_versions", "Forced stable versions for core dependencies and scripts"))
             
+        return out, issues
+
+    @staticmethod
+    def _fix_vite_tailwind_import(files: dict[str, str]) -> tuple[dict[str, str], list[PreflightIssue]]:
+        issues: list[PreflightIssue] = []
+        out = dict(files)
+        vite_config = out.get("vite.config.js", "")
+        if not vite_config:
+            return out, issues
+
+        changed = False
+        lines = vite_config.splitlines()
+        new_lines = []
+        for line in lines:
+            if "tailwindcss" in line and ("import" in line or "require" in line):
+                # E.g., import { tailwindcss } from 'tailwindcss' or require('tailwindcss')
+                changed = True
+                continue
+            # Also remove `tailwindcss()` from plugins array if the AI mistakenly added it there
+            if "tailwindcss()" in line:
+                line = line.replace("tailwindcss(),", "").replace("tailwindcss()", "")
+                changed = True
+            new_lines.append(line)
+
+        if changed:
+            out["vite.config.js"] = "\n".join(new_lines) + "\n"
+            issues.append(PreflightIssue("vite_tailwind_import", "Removed invalid tailwindcss import from vite.config.js"))
+
         return out, issues
 
     @staticmethod
@@ -342,6 +402,10 @@ class PreflightRunner:
         # 0) Sanitize package versions
         out, pkg_issues = PreflightRunner._sanitize_package_versions(out)
         issues.extend(pkg_issues)
+
+        # 0.5) Fix Vite Tailwind import error
+        out, vite_issues = PreflightRunner._fix_vite_tailwind_import(out)
+        issues.extend(vite_issues)
 
         # 1) Fix obvious icon imports
         out, icon_issues = PreflightRunner._fix_common_icon_imports(out)
@@ -395,7 +459,7 @@ class PreflightRunner:
 
         static_issues = PreflightRunner._static_validate(normalized)
         if static_issues:
-            raise PreflightError("Static validation failed", issues=static_issues)
+            raise PreflightError("Static validation failed", issues=static_issues, files=normalized)
 
         if not PreflightRunner._should_run_build():
             return normalized
@@ -424,6 +488,7 @@ class PreflightRunner:
                 raise PreflightError(
                     "npm install failed",
                     issues=[PreflightIssue("npm_install_failed", out[-4000:])],
+                    files=normalized
                 )
 
             rc, out = await PreflightRunner._run_cmd([npm, "run", "build"], cwd=staging_dir, timeout_s=build_timeout_s)
@@ -437,6 +502,7 @@ class PreflightRunner:
                 raise PreflightError(
                     "npm run build failed",
                     issues=[PreflightIssue("npm_build_failed", msg)],
+                    files=normalized
                 )
 
             return normalized
@@ -445,6 +511,7 @@ class PreflightRunner:
             raise PreflightError(
                 "Preflight timed out",
                 issues=[PreflightIssue("timeout", str(exc))],
+                files=normalized
             ) from exc
         finally:
             # Always cleanup staging dir unless explicitly kept

@@ -1,0 +1,1 @@
+export default function App() {\n  return (\n    <main className=\"app-shell\">\n      <h1>Resume Gala</h1>\n      <p>AI-generated portfolio will render here.</p>\n    </main>\n  );\n}\n

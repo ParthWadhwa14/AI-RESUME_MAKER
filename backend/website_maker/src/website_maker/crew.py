@@ -533,9 +533,9 @@ class ReadWebsiteContentTool(BaseTool):
 
         if ScrapeWebsiteTool is not None:
             try:
-                tool = ScrapeWebsiteTool()
+                tool = ScrapeWebsiteTool(website_url=website_url)
 
-                return tool.run(website_url)
+                return tool.run()
 
             except Exception as exc:
                 logger.warning(

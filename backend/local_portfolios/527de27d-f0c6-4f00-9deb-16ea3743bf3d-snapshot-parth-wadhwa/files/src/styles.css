@@ -1,0 +1,85 @@
+/* Import Tailwind CSS
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+*/
+:root {
+ --primary-color: #2f3436;
+ --secondary-color: #4b5154;
+ --accent-color: #66d9ef;
+ --background-color: #1a1d23;
+ --text-color: #ffffff;
+ --subtext-color: #b3b3b3;
+}
+
+* {
+ box-sizing: border-box;
+}
+
+body {
+ margin: 0;
+ background-color: var(--background-color);
+ color: var(--text-color);
+}
+
+.app-shell {
+ min-height: 100vh;
+ display: grid;
+ place-items: center;
+ text-align: center;
+ padding: 24px;
+}
+
+.header {
+ background-color: var(--primary-color);
+ padding: 24px;
+ text-align: center;
+}
+
+.projects {
+ background-color: var(--secondary-color);
+ padding: 24px;
+}
+
+.project-card {
+ background-color: var(--background-color);
+ padding: 24px;
+ border-radius: 10px;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.skills {
+ background-color: var(--secondary-color);
+ padding: 24px;
+}
+
+.skill-card {
+ background-color: var(--background-color);
+ padding: 24px;
+ border-radius: 10px;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.experience {
+ background-color: var(--secondary-color);
+ padding: 24px;
+}
+
+.experience-card {
+ background-color: var(--background-color);
+ padding: 24px;
+ border-radius: 10px;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.education {
+ background-color: var(--secondary-color);
+ padding: 24px;
+}
+
+.education-card {
+ background-color: var(--background-color);
+ padding: 24px;
+ border-radius: 10px;
+ box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}

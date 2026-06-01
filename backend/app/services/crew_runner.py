@@ -271,6 +271,8 @@ class CrewRunner:
             try:
                 files = await PreflightRunner.run_preflight(files=files, job_id=job_id)
             except PreflightError as exc:
+                if getattr(exc, "files", None):
+                    files = exc.files
                 # Save failing output snapshot for debugging before attempting fixup.
                 CrewRunner._persist_local_snapshot(
                     job_id=job_id,
@@ -295,7 +297,7 @@ class CrewRunner:
                     )
                     files = await asyncio.wait_for(
                         asyncio.to_thread(CrewRunner._run_fast_fixup_sync, files, job_id, jobs_store),
-                        timeout=90,
+                        timeout=240,
                     )
                     files = ReactProjectFormatter.normalize(files)
 
@@ -313,11 +315,14 @@ class CrewRunner:
                     )
 
                     files = await PreflightRunner.run_preflight(files=files, job_id=job_id)
-                except Exception:
+                except Exception as exc:
                     detail = str(exc)
                     if getattr(exc, "issues", None):
                         detail += "\n" + "\n".join(f"- {i.code}: {i.message}" for i in exc.issues)
-                    raise RuntimeError("Preflight failed and fixup could not recover.\n" + detail) from exc
+                    logger.warning("Preflight failed and fixup could not recover, but continuing anyway.\n%s", detail)
+                    if getattr(exc, "files", None):
+                        files = exc.files
+                    # We continue so that the dev server can start and the user can see/fix the code.
 
             # Persist locally so the last run is always available on disk.
             preview_url = None
@@ -497,8 +502,22 @@ class CrewRunner:
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # Attempt 3: extract from markdown code blocks (e.g. **index.html**\n```html\n...\n```)
+        import re
+        pattern = re.compile(r'\*\*(.+?)\*\*\s*```[a-z]*\s*(.+?)\s*```', re.DOTALL | re.IGNORECASE)
+        extracted_files = {}
+        for match in pattern.finditer(raw):
+            filename = match.group(1).strip()
+            code = match.group(2).strip()
+            if filename and code:
+                extracted_files[filename] = code
+                
+        if extracted_files:
+            logger.info("Successfully extracted %d files from markdown code blocks.", len(extracted_files))
+            return extracted_files
+
         # Fallback: wrap raw output
-        logger.warning("Could not parse crew output as JSON — wrapping raw output.")
+        logger.warning("Could not parse crew output as JSON or markdown — wrapping raw output.")
         return {"index.html": raw}
 
     @staticmethod

@@ -1,0 +1,80 @@
+/* Import Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+ --color-primary: #2f3436;
+ --color-secondary: #4b5154;
+ --color-accent: #66d9ef;
+ --color-background: #1a1d23;
+ --color-text: #ffffff;
+ --color-subtext: #b3b3b3;
+}
+
+* {
+ box-sizing: border-box;
+}
+
+body {
+ margin: 0;
+ background-color: var(--color-background);
+ color: var(--color-text);
+ font-family: Montserrat, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.header {
+ padding: 24px;
+ text-align: center;
+ background-color: var(--color-primary);
+ color: var(--color-text);
+}
+
+.social-links {
+ list-style: none;
+ margin: 0;
+ padding: 0;
+ display: flex;
+ justify-content: center;
+}
+
+.social-links li {
+ margin-right: 16px;
+}
+
+.social-links a {
+ color: var(--color-text);
+ text-decoration: none;
+}
+
+.social-links a:hover {
+ color: var(--color-accent);
+}
+
+.tech-stack {
+ list-style: none;
+ margin: 0;
+ padding: 0;
+ display: flex;
+ flex-wrap: wrap;
+ justify-content: center;
+}
+
+.tech-stack li {
+ margin-right: 8px;
+ padding: 4px 8px;
+ border: 1px solid var(--color-subtext);
+ border-radius: 4px;
+ background-color: var(--color-primary);
+ color: var(--color-text);
+}
+
+.outcomes {
+ list-style: none;
+ margin: 0;
+ padding: 0;
+}
+
+.outcomes li {
+ margin-bottom: 8px;
+}
